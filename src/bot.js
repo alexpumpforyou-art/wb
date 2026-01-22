@@ -43,10 +43,20 @@ async function main() {
             });
         } else {
             // Новый пользователь или ещё не участвует
-            await bot.sendMessage(chatId, config.messages.welcome, {
-                parse_mode: 'Markdown',
-                reply_markup: getGiveawayKeyboard()
-            });
+            if (config.welcomeImage) {
+                // Отправляем фото с текстом
+                await bot.sendPhoto(chatId, config.welcomeImage, {
+                    caption: config.messages.welcome,
+                    parse_mode: 'Markdown',
+                    reply_markup: getGiveawayKeyboard()
+                });
+            } else {
+                // Только текст
+                await bot.sendMessage(chatId, config.messages.welcome, {
+                    parse_mode: 'Markdown',
+                    reply_markup: getGiveawayKeyboard()
+                });
+            }
         }
 
         console.log(`[START] Пользователь ${userId} (${msg.from.username || 'без username'}), источник: ${startParam || 'прямой'}`);
