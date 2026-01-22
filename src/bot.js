@@ -9,89 +9,94 @@ if (!config.botToken) {
     process.exit(1);
 }
 
-// Создаём бота
-const bot = new TelegramBot(config.botToken, { polling: true });
+// Главная функция запуска
+async function main() {
+    // Инициализируем базу данных
+    await db.initDatabase();
 
-console.log('🤖 Бот запущен!');
+    // Создаём бота
+    const bot = new TelegramBot(config.botToken, { polling: true });
 
-// ========== ОБРАБОТЧИК /start ==========
-bot.onText(/\/start(.*)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startParam = match[1] ? match[1].trim() : null;
+    console.log('🤖 Бот запущен!');
 
-    // Сохраняем/обновляем пользователя
-    db.upsertUser(userId, {
-        username: msg.from.username,
-        first_name: msg.from.first_name,
-        last_name: msg.from.last_name,
-        source: startParam // Параметр после /start (для отслеживания источника рекламы)
+    // ========== ОБРАБОТЧИК /start ==========
+    bot.onText(/\/start(.*)/, async (msg, match) => {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const startParam = match[1] ? match[1].trim() : null;
+
+        // Сохраняем/обновляем пользователя
+        db.upsertUser(userId, {
+            username: msg.from.username,
+            first_name: msg.from.first_name,
+            last_name: msg.from.last_name,
+            source: startParam // Параметр после /start (для отслеживания источника рекламы)
+        });
+
+        // Проверяем, участвует ли уже
+        const user = db.getUser(userId);
+
+        if (user && user.has_participated) {
+            // Уже участвует
+            await bot.sendMessage(chatId, config.messages.alreadyParticipating, {
+                parse_mode: 'Markdown'
+            });
+        } else {
+            // Новый пользователь или ещё не участвует
+            await bot.sendMessage(chatId, config.messages.welcome, {
+                parse_mode: 'Markdown',
+                reply_markup: getGiveawayKeyboard()
+            });
+        }
+
+        console.log(`[START] Пользователь ${userId} (${msg.from.username || 'без username'}), источник: ${startParam || 'прямой'}`);
     });
 
-    // Проверяем, участвует ли уже
-    const user = db.getUser(userId);
-
-    if (user && user.has_participated) {
-        // Уже участвует
-        await bot.sendMessage(chatId, config.messages.alreadyParticipating, {
+    // ========== ОБРАБОТЧИК /help ==========
+    bot.onText(/\/help/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, config.messages.help, {
             parse_mode: 'Markdown'
         });
-    } else {
-        // Новый пользователь или ещё не участвует
-        await bot.sendMessage(chatId, config.messages.welcome, {
-            parse_mode: 'Markdown',
-            reply_markup: getGiveawayKeyboard()
-        });
-    }
-
-    console.log(`[START] Пользователь ${userId} (${msg.from.username || 'без username'}), источник: ${startParam || 'прямой'}`);
-});
-
-// ========== ОБРАБОТЧИК /help ==========
-bot.onText(/\/help/, async (msg) => {
-    await bot.sendMessage(msg.chat.id, config.messages.help, {
-        parse_mode: 'Markdown'
     });
-});
 
-// ========== ОБРАБОТЧИК /status ==========
-bot.onText(/\/status/, async (msg) => {
-    const user = db.getUser(msg.from.id);
+    // ========== ОБРАБОТЧИК /status ==========
+    bot.onText(/\/status/, async (msg) => {
+        const user = db.getUser(msg.from.id);
 
-    let statusMessage;
+        let statusMessage;
 
-    if (!user) {
-        statusMessage = '❌ Ты ещё не зарегистрирован. Нажми /start';
-    } else if (user.has_participated) {
-        statusMessage = `✅ *Ты участвуешь в розыгрыше!*
+        if (!user) {
+            statusMessage = '❌ Ты ещё не зарегистрирован. Нажми /start';
+        } else if (user.has_participated) {
+            statusMessage = `✅ *Ты участвуешь в розыгрыше!*
 
 📅 Регистрация: ${new Date(user.registered_at).toLocaleDateString('ru-RU')}
 
 ⏰ Ожидай результаты в воскресенье в 20:00`;
-    } else {
-        statusMessage = `⚠️ *Ты зарегистрирован, но ещё не участвуешь!*
+        } else {
+            statusMessage = `⚠️ *Ты зарегистрирован, но ещё не участвуешь!*
 
 Нажми кнопку ниже, чтобы принять участие в розыгрыше:`;
-    }
+        }
 
-    await bot.sendMessage(msg.chat.id, statusMessage, {
-        parse_mode: 'Markdown',
-        reply_markup: user && !user.has_participated ? getGiveawayKeyboard() : undefined
+        await bot.sendMessage(msg.chat.id, statusMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: user && !user.has_participated ? getGiveawayKeyboard() : undefined
+        });
     });
-});
 
-// ========== ОБРАБОТЧИК /stats (только для админа) ==========
-bot.onText(/\/stats/, async (msg) => {
-    // Замените на ваш Telegram ID
-    const adminIds = [123456789]; // ЗАМЕНИТЬ НА СВОЙ ID!
+    // ========== ОБРАБОТЧИК /stats (только для админа) ==========
+    bot.onText(/\/stats/, async (msg) => {
+        // Замените на ваш Telegram ID
+        const adminIds = [123456789]; // ЗАМЕНИТЬ НА СВОЙ ID!
 
-    if (!adminIds.includes(msg.from.id)) {
-        return;
-    }
+        if (!adminIds.includes(msg.from.id)) {
+            return;
+        }
 
-    const stats = db.getStats();
+        const stats = db.getStats();
 
-    const statsMessage = `📊 *Статистика бота*
+        const statsMessage = `📊 *Статистика бота*
 
 👥 Всего пользователей: ${stats.total}
 ✅ Участвуют в розыгрыше: ${stats.participated}
@@ -100,21 +105,21 @@ bot.onText(/\/stats/, async (msg) => {
 
 📈 Конверсия: ${stats.total > 0 ? ((stats.participated / stats.total) * 100).toFixed(1) : 0}%`;
 
-    await bot.sendMessage(msg.chat.id, statsMessage, { parse_mode: 'Markdown' });
-});
+        await bot.sendMessage(msg.chat.id, statsMessage, { parse_mode: 'Markdown' });
+    });
 
-// ========== ОБРАБОТЧИК ДАННЫХ ИЗ WEBAPP ==========
-bot.on('web_app_data', async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
+    // ========== ОБРАБОТЧИК ДАННЫХ ИЗ WEBAPP ==========
+    bot.on('web_app_data', async (msg) => {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
 
-    try {
-        const data = JSON.parse(msg.web_app_data.data);
+        try {
+            const data = JSON.parse(msg.web_app_data.data);
 
-        // Отмечаем участие
-        db.markAsParticipated(userId);
+            // Отмечаем участие
+            db.markAsParticipated(userId);
 
-        await bot.sendMessage(chatId, `🎉 *Поздравляем!*
+            await bot.sendMessage(chatId, `🎉 *Поздравляем!*
 
 Ты успешно зарегистрировался в розыгрыше!
 
@@ -123,27 +128,34 @@ bot.on('web_app_data', async (msg) => {
 ⏰ Результаты будут объявлены в воскресенье в 20:00 по Москве.
 
 🍀 Удачи!`, {
-            parse_mode: 'Markdown'
-        });
+                parse_mode: 'Markdown'
+            });
 
-        console.log(`[WEBAPP] Пользователь ${userId} завершил регистрацию`);
+            console.log(`[WEBAPP] Пользователь ${userId} завершил регистрацию`);
 
-    } catch (error) {
-        console.error('[WEBAPP] Ошибка обработки данных:', error);
-    }
-});
+        } catch (error) {
+            console.error('[WEBAPP] Ошибка обработки данных:', error);
+        }
+    });
 
-// ========== ОБРАБОТКА ОШИБОК ==========
-bot.on('polling_error', (error) => {
-    console.error('[ERROR] Polling error:', error.message);
-});
+    // ========== ОБРАБОТКА ОШИБОК ==========
+    bot.on('polling_error', (error) => {
+        console.error('[ERROR] Polling error:', error.message);
+    });
 
-// ========== ЗАПУСК СИСТЕМЫ ДОГРЕВА ==========
-startWarmupScheduler(bot);
+    // ========== ЗАПУСК СИСТЕМЫ ДОГРЕВА ==========
+    startWarmupScheduler(bot);
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n👋 Остановка бота...');
-    bot.stopPolling();
-    process.exit(0);
+    // Graceful shutdown
+    process.on('SIGINT', () => {
+        console.log('\n👋 Остановка бота...');
+        bot.stopPolling();
+        process.exit(0);
+    });
+}
+
+// Запуск
+main().catch(err => {
+    console.error('Ошибка запуска:', err);
+    process.exit(1);
 });
