@@ -98,7 +98,7 @@ async function main() {
     // ========== ОБРАБОТЧИК /stats (только для админа) ==========
     bot.onText(/\/stats/, async (msg) => {
         // Замените на ваш Telegram ID
-        const adminIds = [123456789]; // ЗАМЕНИТЬ НА СВОЙ ID!
+        const adminIds = [5711532015]; // ЗАМЕНИТЬ НА СВОЙ ID!
 
         if (!adminIds.includes(msg.from.id)) {
             return;
